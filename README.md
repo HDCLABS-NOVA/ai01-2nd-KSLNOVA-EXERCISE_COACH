@@ -1,4 +1,4 @@
-# ai01-2nd-2team-KSLNOVA
+# ai01-2nd-KSLNOVA-EXERCISE COACH
 The second project of NOVA - **EXERCISE COACH**
 
 ----------------------------
@@ -6,7 +6,7 @@ The second project of NOVA - **EXERCISE COACH**
 # 프로젝트 기획서
 
 ## 1. 프로젝트 정의
-- **프로젝트 이름** : EXERCISE COACH
+- **프로젝트 이름** : EXERCISE COACH(EC)
 - **목표**  
   - 브라우저에서 웹캠 캡처 → 최하단 이미지만 FastAPI REST(`/analyze-image`)로 전송해 분석  
   - 로컬 Mediapipe Pose로 스쿼트/숄더프레스 관절 각도·rep 카운트 및 스켈레톤/캡처 표시  
