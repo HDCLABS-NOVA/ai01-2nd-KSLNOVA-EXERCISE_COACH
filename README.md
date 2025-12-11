@@ -8,17 +8,15 @@ The second project of NOVA - **EXERCISE COACH**
 ## 1. 프로젝트 정의
 - **프로젝트 이름** : EXERCISE COACH(EC)
 - **목표**  
-  - FastAPI 서버(8003)가 UI와 REST를 함께 제공, 브라우저는 `http://localhost:8003/` 접속  
-  - 브라우저 Mediapipe Pose로 스쿼트/숄더프레스 관절 각도·rep 카운트 및 스켈레톤/캡처 표시  
-  - 최하단 캡처를 `/analyze-image`로 전송해 OpenAI API 기반 한국어 피드백 생성, Web Speech API로 TTS 재생  
-  - YouTube Data API로 튜토리얼 임베드, 실패 시 기본 영상으로 폴백  
-  - 키는 백엔드 환경변수(OPENAI_API_KEY, YOUTUBE_API_KEY)로 주입하며 필요 시 env.js 생성 옵션 유지  
-  - 현재 운동: 스쿼트 / 숄더프레스(상체 11~16 포인트 기준), WS 미사용, 포트 8003 단일 진입
-
-- **참고/참고 논문**  
-  - MediaPipe 기반 운동자세 교정 시스템의 기능 개선 연구  
-  - YOLOv8·Mediapipe를 이용한 운동자세 교정 자동 피드백 시스템  
-  - 실시간 동작 인식 및 자세 교정 스마트 미러 피트니스 시스템
+  - **웹 기반 실시간 AI 코칭**: FastAPI 서버(8003) & React UI (FastAPI 정적 서빙).
+  - **정교한 모션 인식**: MediaPipe Pose Landmarker를 활용한 실시간 관절 추적.
+    - **스쿼트**: 무릎 각도 및 상체 각도 기반 상태 머신 (Standing → Squatting → Rising). 전신(발 포함) 인식 필수.
+    - **숄더프레스**: 팔꿈치 각도 기반 상태 머신 (Down → Up → Down). **상체(허리 위) + 팔(팔꿈치/손목)** 인식 시 동작 가능.
+  - **사용자 친화적 UX**:
+    -**튜토리얼 제공**: YouTube Data API를 활용하여 운동별 튜토리얼 영상을 자동으로 검색 및 iframe 임베드.
+    - **실시간 피드백**: 최하단/최상단 자세 캡처 → `/analyze-image` (OpenAI GPT-4o-mini Vision) → 한국어 텍스트 피드백 → Web Speech API (TTS) 음성 안내.
+  - **데이터 파이프라인**: 
+    - 운동 기록(Rep, Duration) 및 영상(.webm)을 로컬 SQLite(`exercise_records.db`) 및 파일 시스템(`exercise_data/`)에 저장.
 
 ## 2. 주요 내용
 - **📅 프로젝트 기간**: 2025-12-02 ~ 2025-12-12
@@ -57,20 +55,18 @@ The second project of NOVA - **EXERCISE COACH**
 <tr>
   <td align="center">담당 모듈</td>
   <td align="center">
-    자세 스코어링<br/>
-    TTS(Web Speech API) 제어<br/>
-    텍스트→음성 변환
+    DB
   </td>
   <td align="center">
     웹 UI(React)
   </td>
   <td align="center">
-    MediaPipe Pose<br/>
-    관절 각도 계산<br/>
+    CV<br/>
+    서버 구축<br/>
   </td>
   <td align="center">
-    OpenAI API 코칭/리포트<br/>
-    유튜브 추천 키워드/검색
+    LLM Q&A<br/>
+    유튜브 API
   </td>
 </tr>
 
@@ -95,29 +91,41 @@ The second project of NOVA - **EXERCISE COACH**
 
 -----------------------------
 
-# 작업 분할 구조 (WBS)
+# 작업 분할 구조 (WBS) - Technical Detail
 
 ### 1. 📸 CV & 실시간 처리
-- 브라우저 Mediapipe Pose로 관절 각도·스켈레톤·rep 카운트 (스쿼트/숄더프레스)
-- 최하단 캡처만 선택해 REST(`/analyze-image`)로 전송, 프레임 저장/오버레이 표시
-- REST 기반 처리
+- **Pose Detection**: MediaPipe `TasksVision` 로드 (Wasm), 실시간 웹캠 스트림 분석.
+- **좌우 반전(Mirroring)**: 사용자 혼동 방지를 위해 비디오 및 Canvas 오버레이에 좌우 반전 적용.
+- **운동별 로직**:
+  - **스쿼트**: 
+    - 힙-무릎-발목 각도 계산.
+    - `checkFullBodyVisibility`: 하체 랜드마크 필수.
+    - `SQUAT_THRESHOLD`(110도) 미만 시 최하단 캡처.
+  - **숄더프레스**:
+    - 어깨-팔꿈치-손목 각도 계산.
+    - `checkFullBodyVisibility`: 상체(어깨/골반) 및 팔(팔꿈치/손목) 랜드마크 필수.
+    - `UP` 상태(팔꿈치 > 150도)에서 최상단 자세 캡처.
+  - 각 로직별 캡쳐 후 REST(/analyze-image)로 전송, 프레임 저장/오버레이 표시
 
 ### 2. 💬 LLM 코칭 & 리포트
-- OpenAI API로 캡처 기반 한국어 피드백 생성
-- 운동 선택에 따라 코칭 필터링 및 세션별 로그 저장
+- **운동별 피드백 생성**: Base64 이미지 + 운동 종류 + Rep 수신 → GPT-4o-mini Prompting.
+- **Prompt Engineering**: 운동별(스쿼트/숄더프레스) 핵심 체크포인트(무릎 각도, 팔꿈치 벌어짐 등)를 System Prompt로 주입하여 10자 내외의 직관적 피드백 생성.
 - 오류 시 기본 안내/폴백 메시지 제공
 
 ### 3. 🗣️ TTS
-- Web Speech API로 브라우저에서 음성 재생
-- 발화 중복·쿨다운 제어, 음성 다시듣기
+- **Web Speech API**: 브라우저 내장 합성기(`window.speechSynthesis`) 활용.
+- **최적화**: 중복 발화 방지(`lastSpokenRef`), 쿨다운(4초) 적용하여 피드백 중복 방지.
 
 ### 4. 🎬 튜토리얼/검색
-- YouTube Data API로 운동별 추천 영상 검색
-- API 실패 시 기본/노쿠키 영상 대체, 수동 ID/링크 입력 지원
+- **YouTube Data API**: `search-youtube` 엔드포인트. 운동 종목(query)에 따른 자동 검색 및 iframe 임베드.
+- **Fallback**: Quota 초과 또는 키 누락 시 사전 정의된 `FALLBACK_YT` 영상 재생, 수동 ID/링크 입력 지원
 
-### 5. 💻 프론트엔드 UX
-- React(바닐라 JSX+CDN) 단일 페이지, 분석 뷰/튜토리얼/채팅 UI
-- 운동 전환 시 상태 초기화, 키 없음·API 실패 시 안내
+### 5. 💻 프론트엔드 UX/UI
+- **React (Vanilla Style)**: 별도 빌드 없이 `index.html` + `App.jsx` 구조 (Babel Standalone) 채택으로 수정 용이성 극대화.
+- **상태 관리**: `useState`, `useRef`를 활용한 렌더링 최적화 (Canvas 드로잉 루프는 `requestAnimationFrame` 사용).
+- **UI 최적화**: 
+    - 분석 뷰/튜토리얼/채팅 UI
+    - 운동 전환 시 상태 초기화, 키 없음·API 실패 시 안내
 - 현재는 FastAPI(8003)에서 UI 제공, 필요 시 정적 서버+env.js 생성 옵션 유지
 
 ---------------------------
@@ -235,11 +243,11 @@ flowchart LR
 
     subgraph CLIENT["웹 브라우저 (React + Mediapipe)"]
         U["사용자 · 웹캠 ON · 운동 선택"]
-        UI["정적 UI/JS (FastAPI에서 서빙)로컬 Pose 각도·rep·스켈레톤 · 튜토리얼 · TTS"]
+        UI["정적 UI/JS (FastAPI에서 서빙)\n로컬 Pose 각도·rep·스켈레톤 · 튜토리얼 · TTS"]
     end
 
     subgraph SERVER["FastAPI / exercise_server.py"]
-        REST["REST: /analyze-image /chat /search-youtube/save-log /save-session (정적 파일 서빙 포함)"]
+        REST["REST: /analyze-image /chat /search-youtube\n/save-log /save-session (정적 파일 서빙 포함)"]
         DB["SQLite exercise_records.db"]
         LOGS["exercise_data/ (로그·캡처 저장)"]
     end
@@ -325,16 +333,9 @@ http://localhost:8003/
 
 -------------------------
 
-# 시각화 리포트
-
-## 1. 분석 결과 요약
-- NONE
-
-## 2. 대시보드
-NONE
-
-## 3. 제안
-- NONE
+# UI
+<img src="https://github.com/user-attachments/assets/40421aa5-3dba-4e26-8dbb-6819b46a6946">
+<img src="https://github.com/user-attachments/assets/82d8b1b8-fd68-4af8-8fda-4c8f0b2510fc">
 
 --------------------------
 
