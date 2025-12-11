@@ -235,11 +235,11 @@ flowchart LR
 
     subgraph CLIENT["웹 브라우저 (React + Mediapipe)"]
         U["사용자 · 웹캠 ON · 운동 선택"]
-        UI["정적 UI/JS (FastAPI에서 서빙)\n로컬 Pose 각도·rep·스켈레톤 · 튜토리얼 · TTS"]
+        UI["정적 UI/JS (FastAPI에서 서빙)로컬 Pose 각도·rep·스켈레톤 · 튜토리얼 · TTS"]
     end
 
     subgraph SERVER["FastAPI / exercise_server.py"]
-        REST["REST: /analyze-image /chat /search-youtube\n/save-log /save-session (정적 파일 서빙 포함)"]
+        REST["REST: /analyze-image /chat /search-youtube/save-log /save-session (정적 파일 서빙 포함)"]
         DB["SQLite exercise_records.db"]
         LOGS["exercise_data/ (로그·캡처 저장)"]
     end
